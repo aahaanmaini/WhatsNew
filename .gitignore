@@ -1,0 +1,51 @@
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytype/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Packaging / build artifacts
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+*.whl
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Logs & temp
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Tool-specific (this project)
+.whatsnew/cache/
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*

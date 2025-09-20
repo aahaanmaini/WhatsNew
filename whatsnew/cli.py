@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Sequence
 
 from . import __version__
+from .config import get_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,15 +23,42 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"whatsnew {__version__}",
         help="Show the version and exit.",
     )
-    parser.add_argument(
+
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument(
         "--json",
-        action="store_true",
-        help="Output the changelog in JSON format (placeholder).",
+        dest="output_format",
+        action="store_const",
+        const="json",
+        help="Output the changelog in JSON format.",
+    )
+    output_group.add_argument(
+        "--md",
+        dest="output_format",
+        action="store_const",
+        const="markdown",
+        help="Output the changelog in Markdown format.",
+    )
+
+    parser.add_argument(
+        "--no-code",
+        dest="include_code_hunks",
+        action="store_false",
+        default=None,
+        help="Disable sending code hunks to the summarizer.",
     )
     parser.add_argument(
-        "--md",
+        "--include-internal",
+        dest="include_internal",
         action="store_true",
-        help="Output the changelog in Markdown format (placeholder).",
+        default=None,
+        help="Include internal-only changes in the output.",
+    )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Explicitly set the repository root (defaults to auto-detect).",
     )
     return parser
 
@@ -37,9 +66,27 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point for the whatsnew CLI."""
     parser = build_parser()
-    parser.parse_args(argv)
-    # Placeholder message until summarization is implemented.
-    parser.exit(0, "whatsnew: changelog generation coming soon.\n")
+    args = parser.parse_args(argv)
+
+    overrides = _collect_cli_overrides(args)
+    config = get_config(repo_root=args.repo_root, cli_overrides=overrides)
+
+    output_format = config.data.get("output", {}).get("format", "terminal")
+    parser.exit(0, f"whatsnew: changelog generation coming soon (output={output_format}).\n")
+
+
+def _collect_cli_overrides(args: argparse.Namespace) -> dict:
+    overrides: dict = {}
+    if args.output_format:
+        overrides.setdefault("output", {})["format"] = args.output_format
+
+    if args.include_code_hunks is not None:
+        overrides["include_code_hunks"] = args.include_code_hunks
+
+    if args.include_internal is not None:
+        overrides["drop_internal"] = not args.include_internal
+
+    return overrides
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
