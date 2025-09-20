@@ -1,0 +1,1 @@
+"""Reduce step summarization (placeholder)."""

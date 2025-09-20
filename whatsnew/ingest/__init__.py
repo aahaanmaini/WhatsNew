@@ -1,0 +1,1 @@
+"""Data ingestion for whatsnew."""

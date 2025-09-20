@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: whatsnew
+Version: 0.1.0
+Summary: Generate concise changelogs from git history.
+Author: WhatsNew Maintainers
+License: MIT
+Project-URL: Homepage, https://github.com/whatsnew-cli/whatsnew
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests
+Requires-Dist: PyYAML
+Requires-Dist: rich
+Requires-Dist: tenacity
+Requires-Dist: gitpython
+Requires-Dist: python-dateutil
+Dynamic: license-file
+
+# whatsnew
+
+Generate concise, user-facing changelogs straight from git history.
+
+## Quickstart
+
+```bash
+pipx install --editable .
+whatsnew --help
+```

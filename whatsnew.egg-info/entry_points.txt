@@ -1,0 +1,2 @@
+[console_scripts]
+whatsnew = whatsnew.cli:main

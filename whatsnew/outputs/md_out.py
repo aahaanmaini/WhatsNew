@@ -1,0 +1,1 @@
+"""Markdown output formatter (placeholder)."""
