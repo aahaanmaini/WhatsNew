@@ -101,6 +101,7 @@ class FallbackProvider(SummarizationProvider):
     """Heuristic provider used when no external model is configured."""
 
     name = "fallback"
+    default_model = "fallback"
 
     def generate(
         self,

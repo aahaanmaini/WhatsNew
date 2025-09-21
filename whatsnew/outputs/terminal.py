@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import textwrap
 from typing import Any, Dict, Mapping
 
@@ -27,7 +28,8 @@ def render_terminal(summary: Mapping[str, Any], *, use_rich: bool = True) -> str
 
 
 def _render_with_rich(payload: Mapping[str, Any]) -> str:
-    console = Console(record=True)
+    buffer = io.StringIO()
+    console = Console(record=True, file=buffer, force_terminal=True)
     repo = payload.get("repo", "?")
     range_info = payload.get("range", {})
     header = f"[bold]whatsnew[/bold] · {repo} · {range_info.get('summary', '')}"

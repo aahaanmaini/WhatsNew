@@ -240,6 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "check":
         return _handle_check(parser, args, config)
 
+    _status("collecting git history...")
     try:
         summary = _generate_summary(args, config)
     except RangeResolutionError as exc:
@@ -274,11 +275,19 @@ def _collect_cli_overrides(args: argparse.Namespace) -> dict:
     return overrides
 
 
+def _status(message: str) -> None:
+    print(f"whatsnew: {message}", file=sys.stderr, flush=True)
+
+
 def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
+    _status("resolving commit range...")
     range_request = resolve_range_request(vars(args), config.data)
+    _status("reading commits and pull requests...")
     changes = collect_changes(config, range_request)
     provider = provider_from_config(config.data)
+    _status("summarizing individual changes...")
     map_items = run_map_step(config, changes, provider=provider)
+    _status("merging summaries...")
     reduce_result = run_reduce_step(config, map_items)
 
     summary = reduce_result.to_dict()
@@ -309,6 +318,7 @@ def _render_summary(
     config: WhatsNewConfig,
     summary: dict,
 ) -> None:
+    _status("rendering output...")
     output_format = config.data.get("output", {}).get("format", "terminal")
     if args.output_format:
         output_format = args.output_format
@@ -333,7 +343,9 @@ def _handle_publish(
     tag = getattr(args, "tag", None)
     message = getattr(args, "publish_message", None)
     summary = _stamp_release_metadata(summary, tag)
+    _status("preparing release artifacts...")
     if getattr(args, "publish_preview", False) or args.dry_run:
+        _status("building publish preview...")
         try:
             result = preview_publish(config, summary, tag=tag, message=message)
         except PreviewError as exc:
@@ -343,6 +355,7 @@ def _handle_publish(
             print("Dry run: no changes pushed.")
         return 0
 
+    _status("pushing artifacts to gh-pages...")
     try:
         result = publish_summary(
             config,
@@ -366,6 +379,7 @@ def _handle_preview(
     tag = getattr(args, "tag", None)
     message = getattr(args, "publish_message", None)
     summary = _stamp_release_metadata(summary, tag)
+    _status("building publish preview...")
     try:
         result = preview_publish(config, summary, tag=tag, message=message)
     except PreviewError as exc:
@@ -384,6 +398,7 @@ def _handle_release(
     if not tag:
         parser.error("--tag is required for whatsnew release")
     summary = _stamp_release_metadata(summary, tag)
+    _status("generating release notes...")
     _render_summary(parser, args, config, summary)
     return 0
 
@@ -393,6 +408,7 @@ def _handle_check(
     args: argparse.Namespace,
     config: WhatsNewConfig,
 ) -> int:
+    _status("running environment diagnostics...")
     try:
         repo = open_repository(config.repo_root)
         meta = describe_repository(config.repo_root)
