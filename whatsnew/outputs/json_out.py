@@ -13,11 +13,32 @@ def build_json_payload(summary: Mapping[str, Any]) -> Dict[str, Any]:
 
     repo = summary.get("repository", {})
     range_info = summary.get("range", {})
-    sections = summary.get("sections", [])
+    raw_sections = summary.get("sections", [])
+    sections = []
+    for section in raw_sections:
+        items = []
+        for item in section.get("items", []) or []:
+            labels = item.get("labels") or []
+            refs = item.get("refs") or []
+            items.append(
+                {
+                    "summary": item.get("summary", ""),
+                    "refs": refs,
+                    "labels": labels,
+                }
+            )
+        sections.append(
+            {
+                "title": section.get("title", ""),
+                "items": items,
+            }
+        )
     meta = summary.get("meta", {})
 
     repo_full = _format_repo(repo)
     timestamp = summary.get("id") or _iso_now()
+    released_at = summary.get("released_at") or meta.get("released_at") or timestamp
+    tag = summary.get("tag") or meta.get("tag")
     stats = {
         "commits": meta.get("commit_count", len(summary.get("commits", []))),
         "prs": meta.get("pr_count", len(summary.get("prs", []))),
@@ -35,14 +56,18 @@ def build_json_payload(summary: Mapping[str, Any]) -> Dict[str, Any]:
         "to": range_info.get("end_ref"),
     }
 
-    return {
+    result = {
         "id": timestamp,
         "repo": repo_full,
         "range": range_payload,
+        "released_at": released_at,
         "stats": stats,
         "sections": sections,
         "provenance": provenance,
     }
+    if tag:
+        result["tag"] = tag
+    return result
 
 
 def _format_repo(repo: Mapping[str, Any]) -> str:

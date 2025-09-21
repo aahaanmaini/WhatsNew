@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Sequence
 
 from . import __version__
@@ -263,6 +264,7 @@ def _handle_publish(
 ) -> int:
     tag = getattr(args, "publish_tag", None)
     message = getattr(args, "publish_message", None)
+    summary = _stamp_release_metadata(summary, tag)
     if getattr(args, "publish_preview", False):
         try:
             result = preview_publish(config, summary, tag=tag, message=message)
@@ -293,6 +295,7 @@ def _handle_preview(
 ) -> int:
     tag = getattr(args, "publish_tag", None)
     message = getattr(args, "publish_message", None)
+    summary = _stamp_release_metadata(summary, tag)
     try:
         result = preview_publish(config, summary, tag=tag, message=message)
     except PreviewError as exc:
@@ -323,6 +326,16 @@ def _print_preview_result(result: PreviewResult) -> None:
         lines.append(f"--- {diff.path.as_posix()} ---")
         lines.append(diff.diff or "(no changes)")
     print("\n".join(lines))
+
+
+def _stamp_release_metadata(summary: dict, tag: str | None) -> dict:
+    if tag:
+        summary["tag"] = tag
+        summary.setdefault("meta", {})["tag"] = tag
+    released_at = datetime.now(timezone.utc).isoformat()
+    summary["released_at"] = released_at
+    summary.setdefault("meta", {})["released_at"] = released_at
+    return summary
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

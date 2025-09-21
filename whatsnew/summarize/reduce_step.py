@@ -28,6 +28,16 @@ CLASS_TO_SECTION = {
     "internal": "Internal",
 }
 
+CLASS_LABELS = {
+    "breaking": "Breaking change",
+    "feature": "Feature",
+    "fix": "Fix",
+    "perf": "Improvement",
+    "security": "Security",
+    "docs": "Docs",
+    "internal": "Internal",
+}
+
 
 @dataclass(slots=True)
 class ReduceResult:
@@ -65,10 +75,12 @@ def run_reduce_step(config: WhatsNewConfig, items: Iterable[MapItem]) -> ReduceR
         section = CLASS_TO_SECTION.get(item.classification, "Fixes")
         if section not in buckets:
             buckets[section] = []
+        label = CLASS_LABELS.get(item.classification, item.classification.title())
         buckets[section].append(
             {
                 "summary": item.summary,
                 "refs": item.refs,
+                "labels": [label],
             }
         )
 
