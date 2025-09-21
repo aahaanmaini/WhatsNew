@@ -1,51 +1,30 @@
-# Python bytecode & caches
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
-.pytype/
-.mypy_cache/
-.ruff_cache/
+*.egg-info/
+.build/
+.env
+.venv
+.envrc
+*.lock
+.eggs/
 .pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
+.DS_Store
+
+# Node-related
+node_modules/
+dist/
+build/
+
+# Coverage
+htmlcov/
 .coverage
 .coverage.*
-htmlcov/
 
-# Packaging / build artifacts
-*.egg-info/
-.eggs/
-build/
-dist/
-pip-wheel-metadata/
-*.whl
+# Cache
+.cache/
 
-# Virtual envs
-.venv/
-venv/
-env/
-ENV/
-.python-version
-
-# Logs & temp
-*.log
-*.tmp
-*.temp
-*.swp
-*.swo
-
-# Tool-specific (this project)
+# Project specific
 .whatsnew/cache/
-
-# IDE/editor
-.vscode/
-.idea/
-*.iml
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Env / secrets
-.env
-.env.*

@@ -9,6 +9,11 @@ from typing import Sequence
 
 from . import __version__
 from .config import get_config
+from .utils.dates import (
+    RangeResolutionError,
+    resolve_range_request,
+    summarize_range_request,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +65,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Explicitly set the repository root (defaults to auto-detect).",
     )
+
+    range_group = parser.add_argument_group("Range selection")
+    range_group.add_argument(
+        "--tag",
+        dest="tag",
+        help="Generate notes since the specified tag (exclusive).",
+    )
+    range_group.add_argument(
+        "--from-sha",
+        dest="from_sha",
+        help="Start commit SHA for the range.",
+    )
+    range_group.add_argument(
+        "--to-sha",
+        dest="to_sha",
+        help="End commit SHA for the range (defaults to HEAD).",
+    )
+    range_group.add_argument(
+        "--since-date",
+        dest="since_date",
+        help="Earliest commit date (ISO 8601).",
+    )
+    range_group.add_argument(
+        "--until-date",
+        dest="until_date",
+        help="Latest commit date (ISO 8601).",
+    )
+    range_group.add_argument(
+        "--window",
+        dest="window",
+        help="Time window to include (e.g. 7d, 24h).",
+    )
+
     return parser
 
 
@@ -71,8 +109,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     overrides = _collect_cli_overrides(args)
     config = get_config(repo_root=args.repo_root, cli_overrides=overrides)
 
+    try:
+        range_request = resolve_range_request(vars(args), config.data)
+    except RangeResolutionError as exc:
+        parser.error(str(exc))
+
     output_format = config.data.get("output", {}).get("format", "terminal")
-    parser.exit(0, f"whatsnew: changelog generation coming soon (output={output_format}).\n")
+    range_summary = summarize_range_request(range_request)
+    parser.exit(
+        0,
+        "whatsnew: changelog generation coming soon "
+        f"(output={output_format}, range={range_summary}).\n",
+    )
 
 
 def _collect_cli_overrides(args: argparse.Namespace) -> dict:
