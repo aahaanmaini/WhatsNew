@@ -61,6 +61,7 @@ class WhatsNewConfig:
 
     repo_root: Path
     data: Dict[str, Any]
+    config_path: Path | None = None
 
     def get(self, key: str, default: Any | None = None) -> Any:
         return self.data.get(key, default)
@@ -69,13 +70,14 @@ class WhatsNewConfig:
 def get_config(
     repo_root: Path | None = None,
     cli_overrides: Mapping[str, Any] | None = None,
+    config_path: str | Path | None = None,
 ) -> WhatsNewConfig:
     """Return the effective configuration for the CLI execution."""
 
     resolved_root = repo_root or _discover_repo_root(Path.cwd())
 
     merged: Dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG)
-    file_config = _load_file_config(resolved_root)
+    file_config, config_file = _load_file_config(resolved_root, config_path)
     if file_config:
         merged = _deep_merge(merged, file_config)
 
@@ -86,7 +88,7 @@ def get_config(
     if cli_overrides:
         merged = _deep_merge(merged, cli_overrides)
 
-    return WhatsNewConfig(repo_root=resolved_root, data=merged)
+    return WhatsNewConfig(repo_root=resolved_root, data=merged, config_path=config_file)
 
 
 def _discover_repo_root(start: Path) -> Path:
@@ -98,25 +100,35 @@ def _discover_repo_root(start: Path) -> Path:
     return current
 
 
-def _load_file_config(root: Path) -> Dict[str, Any]:
+def _load_file_config(root: Path, explicit: str | Path | None) -> tuple[Dict[str, Any], Path | None]:
+    if explicit:
+        location = (Path(explicit) if Path(explicit).is_absolute() else root / explicit).resolve()
+        if not location.is_file():
+            raise FileNotFoundError(f"Configuration file not found: {location}")
+        return _read_config_file(location), location
+
     for name in CONFIG_FILE_NAMES:
         location = root / name
         if location.is_file():
-            text = location.read_text(encoding="utf-8")
-            if yaml is None:
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError as exc:  # pragma: no cover - fallback path
-                    raise RuntimeError(
-                        "PyYAML is required to read configuration files with YAML syntax. "
-                        "Either install PyYAML or provide JSON content."
-                    ) from exc
-            else:
-                data = yaml.safe_load(text)  # type: ignore[union-attr]
-            if not isinstance(data, dict):
-                return {}
-            return data
-    return {}
+            return _read_config_file(location), location
+    return {}, None
+
+
+def _read_config_file(location: Path) -> Dict[str, Any]:
+    text = location.read_text(encoding="utf-8")
+    if yaml is None:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:  # pragma: no cover - fallback path
+            raise RuntimeError(
+                "PyYAML is required to read configuration files with YAML syntax. "
+                "Either install PyYAML or provide JSON content."
+            ) from exc
+    else:
+        data = yaml.safe_load(text)  # type: ignore[union-attr]
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def _environment_overrides() -> Dict[str, Any]:

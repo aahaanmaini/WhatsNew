@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Sequence
 
 from . import __version__
@@ -53,18 +54,34 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: 
         default=None,
         help="Disable sending code hunks to the summarizer.",
     )
-    parser.add_argument(
+    privacy_group = parser.add_mutually_exclusive_group()
+    privacy_group.add_argument(
         "--include-internal",
         dest="include_internal",
         action="store_true",
         default=None,
         help="Include internal-only changes in the output.",
     )
+    privacy_group.add_argument(
+        "--drop-internal",
+        dest="drop_internal",
+        action="store_true",
+        default=None,
+        help="Hide internal-only changes (default).",
+    )
     parser.add_argument(
         "--repo-root",
         type=Path,
         default=None,
         help="Explicitly set the repository root (defaults to auto-detect).",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        default=False,
+        help="Execute without writing changes.",
     )
 
     range_group = parser.add_argument_group("Range selection")
@@ -104,12 +121,14 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: 
         output_format=None,
         include_code_hunks=None,
         include_internal=None,
+        drop_internal=None,
         tag=None,
         from_sha=None,
         to_sha=None,
         since_date=None,
         until_date=None,
         window=None,
+        dry_run=False,
     )
 
 
@@ -126,6 +145,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the version and exit.",
     )
 
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        help="Path to a whatsnew.config.yml file.",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        default="warning",
+        help="Set the logging level for diagnostics.",
+    )
+
     add_common_arguments(parser, include_range_tag=True)
 
     subparsers = parser.add_subparsers(dest="command")
@@ -134,12 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish",
         help="Publish changelog artifacts to the gh-pages branch.",
     )
-    add_common_arguments(publish_parser, include_range_tag=False)
-    publish_parser.add_argument(
-        "--tag",
-        dest="publish_tag",
-        help="Release tag to write under data/releases/.",
-    )
+    add_common_arguments(publish_parser, include_range_tag=True)
     publish_parser.add_argument(
         "--message",
         dest="publish_message",
@@ -162,16 +188,22 @@ def build_parser() -> argparse.ArgumentParser:
         "preview",
         help="Preview the gh-pages changes that would be published.",
     )
-    add_common_arguments(preview_parser, include_range_tag=False)
-    preview_parser.add_argument(
-        "--tag",
-        dest="publish_tag",
-        help="Release tag to preview under data/releases/.",
-    )
+    add_common_arguments(preview_parser, include_range_tag=True)
     preview_parser.add_argument(
         "--message",
         dest="publish_message",
         help="Commit message that would be used during publish.",
+    )
+
+    release_parser = subparsers.add_parser(
+        "release",
+        help="Render the changelog for a specific tag.",
+    )
+    add_common_arguments(release_parser, include_range_tag=False)
+    release_parser.add_argument(
+        "--tag",
+        required=True,
+        help="Tag to generate release notes for.",
     )
 
     return parser
@@ -182,8 +214,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    level = getattr(logging, args.log_level.upper(), logging.WARNING)
+    logging.basicConfig(level=level)
+
     overrides = _collect_cli_overrides(args)
-    config = get_config(repo_root=args.repo_root, cli_overrides=overrides)
+    try:
+        config = get_config(
+            repo_root=args.repo_root,
+            cli_overrides=overrides,
+            config_path=args.config_path,
+        )
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
+
     try:
         summary = _generate_summary(args, config)
     except RangeResolutionError as exc:
@@ -197,20 +240,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_publish(parser, args, config, summary)
     if command == "preview":
         return _handle_preview(parser, args, config, summary)
+    if command == "release":
+        return _handle_release(parser, args, config, summary)
 
-    output_format = config.data.get("output", {}).get("format", "terminal")
-    if args.output_format:
-        output_format = args.output_format
-
-    payload = build_json_payload(summary)
-
-    if output_format == "json":
-        parser.exit(0, json.dumps(payload, indent=2) + "\n")
-    if output_format == "markdown":
-        parser.exit(0, build_markdown(summary) + "\n")
-
-    output_text = render_terminal(summary)
-    parser.exit(0, output_text + "\n")
+    _render_summary(parser, args, config, summary)
+    return 0
 
 
 def _collect_cli_overrides(args: argparse.Namespace) -> dict:
@@ -223,6 +257,8 @@ def _collect_cli_overrides(args: argparse.Namespace) -> dict:
 
     if args.include_internal is not None:
         overrides["drop_internal"] = not args.include_internal
+    elif getattr(args, "drop_internal", None):
+        overrides["drop_internal"] = True
 
     return overrides
 
@@ -256,21 +292,44 @@ def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
     return summary
 
 
+def _render_summary(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    config: WhatsNewConfig,
+    summary: dict,
+) -> None:
+    output_format = config.data.get("output", {}).get("format", "terminal")
+    if args.output_format:
+        output_format = args.output_format
+
+    payload = build_json_payload(summary)
+
+    if output_format == "json":
+        parser.exit(0, json.dumps(payload, indent=2) + "\n")
+    if output_format == "markdown":
+        parser.exit(0, build_markdown(summary) + "\n")
+
+    output_text = render_terminal(summary)
+    parser.exit(0, output_text + "\n")
+
+
 def _handle_publish(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     config: WhatsNewConfig,
     summary: dict,
 ) -> int:
-    tag = getattr(args, "publish_tag", None)
+    tag = getattr(args, "tag", None)
     message = getattr(args, "publish_message", None)
     summary = _stamp_release_metadata(summary, tag)
-    if getattr(args, "publish_preview", False):
+    if getattr(args, "publish_preview", False) or args.dry_run:
         try:
             result = preview_publish(config, summary, tag=tag, message=message)
         except PreviewError as exc:
             parser.error(str(exc))
         _print_preview_result(result)
+        if args.dry_run:
+            print("Dry run: no changes pushed.")
         return 0
 
     try:
@@ -293,7 +352,7 @@ def _handle_preview(
     config: WhatsNewConfig,
     summary: dict,
 ) -> int:
-    tag = getattr(args, "publish_tag", None)
+    tag = getattr(args, "tag", None)
     message = getattr(args, "publish_message", None)
     summary = _stamp_release_metadata(summary, tag)
     try:
@@ -301,6 +360,20 @@ def _handle_preview(
     except PreviewError as exc:
         parser.error(str(exc))
     _print_preview_result(result)
+    return 0
+
+
+def _handle_release(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    config: WhatsNewConfig,
+    summary: dict,
+) -> int:
+    tag = getattr(args, "tag", None)
+    if not tag:
+        parser.error("--tag is required for whatsnew release")
+    summary = _stamp_release_metadata(summary, tag)
+    _render_summary(parser, args, config, summary)
     return 0
 
 
