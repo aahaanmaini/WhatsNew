@@ -139,6 +139,9 @@ def _environment_overrides() -> Dict[str, Any]:
     gh_token = os.environ.get("GH_TOKEN")
     if gh_token:
         overrides.setdefault("credentials", {})["github_token"] = gh_token
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY")
+    if cerebras_key:
+        overrides.setdefault("credentials", {})["cerebras_api_key"] = cerebras_key
     return overrides
 
 

@@ -475,7 +475,11 @@ def _run_environment_checks(config: WhatsNewConfig, meta) -> list[tuple[str, str
     if openai_key:
         results.append(("ok", "OPENAI_API_KEY detected."))
     else:
-        results.append(("warn", "OPENAI_API_KEY missing; falling back to heuristic summaries."))
+        results.append(("warn", "OPENAI_API_KEY missing; will use Cerebras or fallback summaries."))
+
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY") or credentials.get("cerebras_api_key")
+    if cerebras_key:
+        results.append(("ok", "CEREBRAS_API_KEY detected."))
 
     try:
         import requests  # type: ignore  # noqa: F401

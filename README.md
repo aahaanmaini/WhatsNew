@@ -20,6 +20,7 @@ This repository ships with a ready-to-use workflow at `.github/workflows/whatsne
 ### Required secrets
 
 - `OPENAI_API_KEY` (optional but recommended for high-quality summaries)
+- `CEREBRAS_API_KEY` (set if you prefer the Cerebras Inference API)
 - `GITHUB_TOKEN` is provided automatically by GitHub Actions and used for pushing to `gh-pages`
 
 Once those secrets are configured in your repository settings, pushing a tag such as `v1.2.3` will build the release notes and publish them to GitHub Pages.

@@ -7,6 +7,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
+try:  # pragma: no cover - optional dependency
+    import requests
+except ImportError:  # pragma: no cover
+    requests = None  # type: ignore
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
@@ -126,15 +130,85 @@ class FallbackProvider(SummarizationProvider):
         return ProviderResponse(model=model or self.default_model, payload=payload)
 
 
+class CerebrasProvider(SummarizationProvider):
+    """Implementation backed by Cerebras Inference API."""
+
+    name = "cerebras"
+    default_model = "llama3.1-8b"
+
+    def __init__(self, api_key: str, base_url: str | None = None, default_model: str | None = None) -> None:
+        self._api_key = api_key
+        self._base_url = base_url or "https://api.cerebras.ai/v1/chat/completions"
+        if default_model:
+            self.default_model = default_model
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    def _request(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        if requests is None:
+            raise RuntimeError("requests library is required for the Cerebras provider")
+        response = requests.post(  # type: ignore[no-any-unimported]
+            self._base_url,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def generate(
+        self,
+        *,
+        model: str | None,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: Mapping[str, Any] | None = None,
+    ) -> ProviderResponse:
+        effective_model = model or self.default_model
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        payload: Dict[str, Any] = {
+            "model": effective_model,
+            "messages": messages,
+        }
+        if json_schema:
+            payload["response_format"] = {"type": "json_schema", "json_schema": json_schema}
+        else:
+            payload["response_format"] = {"type": "json_object"}
+
+        data = self._request(payload)
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        payload_dict = json.loads(content)
+        return ProviderResponse(model=effective_model, payload=payload_dict)
+
+
 def provider_from_config(config: Mapping[str, Any]) -> SummarizationProvider:
     """Return an appropriate provider based on configuration."""
 
     credentials = config.get("credentials", {}) if isinstance(config, Mapping) else {}
     api_key = credentials.get("openai_api_key") if isinstance(credentials, Mapping) else None
+    cerebras_key = credentials.get("cerebras_api_key") if isinstance(credentials, Mapping) else None
     provider_cfg = config.get("provider", {}) if isinstance(config, Mapping) else {}
     model = provider_cfg.get("model") if isinstance(provider_cfg, Mapping) else None
+    provider_name = provider_cfg.get("name") if isinstance(provider_cfg, Mapping) else None
+    base_url = provider_cfg.get("base_url") if isinstance(provider_cfg, Mapping) else None
 
-    if api_key:
+    if provider_name == "cerebras" or (provider_name is None and cerebras_key and not api_key):
+        if not cerebras_key:
+            logger.warning("Cerebras provider selected but CEREBRAS API key missing; falling back.")
+        else:
+            try:
+                provider = CerebrasProvider(cerebras_key, base_url=base_url, default_model=model)
+                return provider
+            except Exception as exc:  # pragma: no cover - optional dependency missing
+                logger.warning("Falling back to heuristic provider: %s", exc)
+
+    if api_key and (provider_name in (None, "openai")):
         try:
             provider = OpenAIProvider(api_key, default_model=model)
             return provider
