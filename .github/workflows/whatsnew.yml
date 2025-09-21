@@ -1,0 +1,35 @@
+name: whatsnew
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install whatsnew
+        run: pipx install whatsnew
+
+      - name: Generate JSON/MD
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          whatsnew --tag "${GITHUB_REF_NAME}" --json > /tmp/release.json
+          whatsnew --tag "${GITHUB_REF_NAME}" --md > /tmp/release.md || true
+
+      - name: Publish to gh-pages
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          whatsnew publish --tag "${GITHUB_REF_NAME}"
