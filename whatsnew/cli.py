@@ -7,12 +7,14 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Sequence
 
 from . import __version__
 from .config import get_config
 from .ingest.collect import collect_changes
+from .git.repo import describe_repository, open_repository
 from .outputs.json_out import build_json_payload
 from .outputs.md_out import build_markdown
 from .outputs.terminal import render_terminal
@@ -206,6 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tag to generate release notes for.",
     )
 
+    check_parser = subparsers.add_parser(
+        "check",
+        help="Run environment diagnostics.",
+    )
+    add_common_arguments(check_parser, include_range_tag=False)
+
     return parser
 
 
@@ -227,14 +235,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except FileNotFoundError as exc:
         parser.error(str(exc))
 
+    command = getattr(args, "command", None)
+
+    if command == "check":
+        return _handle_check(parser, args, config)
+
     try:
         summary = _generate_summary(args, config)
     except RangeResolutionError as exc:
         parser.error(str(exc))
     except Exception as exc:  # pragma: no cover - runtime dependency
         parser.error(f"Failed to collect git changes: {exc}")
-
-    command = getattr(args, "command", None)
 
     if command == "publish":
         return _handle_publish(parser, args, config, summary)
@@ -377,6 +388,30 @@ def _handle_release(
     return 0
 
 
+def _handle_check(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    config: WhatsNewConfig,
+) -> int:
+    try:
+        repo = open_repository(config.repo_root)
+        meta = describe_repository(config.repo_root)
+    except Exception as exc:
+        parser.error(f"Failed to open repository: {exc}")
+
+    checks = _run_environment_checks(config, meta)
+    for status, message in checks:
+        prefix = {
+            "ok": "[OK]",
+            "warn": "[WARN]",
+            "error": "[ERROR]",
+        }.get(status, "[INFO]")
+        print(f"{prefix} {message}")
+
+    has_error = any(status == "error" for status, _ in checks)
+    return 1 if has_error else 0
+
+
 def _print_publish_success(result: PublishResult) -> None:
     lines = [
         f"Published changelog to branch {result.branch}.",
@@ -399,6 +434,41 @@ def _print_preview_result(result: PreviewResult) -> None:
         lines.append(f"--- {diff.path.as_posix()} ---")
         lines.append(diff.diff or "(no changes)")
     print("\n".join(lines))
+
+
+def _run_environment_checks(config: WhatsNewConfig, meta) -> list[tuple[str, str]]:
+    results: list[tuple[str, str]] = []
+
+    results.append(("ok", f"Repository root: {config.repo_root}"))
+    if config.config_path:
+        results.append(("ok", f"Config file: {config.config_path}"))
+
+    if meta.remote_url:
+        results.append(("ok", f"Remote origin: {meta.remote_url}"))
+    else:
+        results.append(("warn", "No git remote configured; publishing may fail."))
+
+    credentials = config.data.get("credentials", {}) if isinstance(config.data, dict) else {}
+    gh_token = os.environ.get("GH_TOKEN") or credentials.get("github_token")
+    if gh_token:
+        results.append(("ok", "GitHub token detected."))
+    else:
+        results.append(("warn", "GH_TOKEN not found; gh-pages publish will prompt for credentials."))
+
+    openai_key = os.environ.get("OPENAI_API_KEY") or credentials.get("openai_api_key")
+    if openai_key:
+        results.append(("ok", "OPENAI_API_KEY detected."))
+    else:
+        results.append(("warn", "OPENAI_API_KEY missing; falling back to heuristic summaries."))
+
+    try:
+        import requests  # type: ignore  # noqa: F401
+
+        results.append(("ok", "requests library available."))
+    except ImportError:
+        results.append(("warn", "requests library not installed; GitHub API calls will be skipped."))
+
+    return results
 
 
 def _stamp_release_metadata(summary: dict, tag: str | None) -> dict:

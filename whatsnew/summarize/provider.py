@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - optional dependency
@@ -64,19 +66,35 @@ class OpenAIProvider(SummarizationProvider):
     ) -> ProviderResponse:
         effective_model = model or self.default_model
         schema = json_schema or {}
-        response = self._client.responses.create(  # type: ignore[attr-defined]
-            model=effective_model,
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_schema", "json_schema": schema}
-            if schema
-            else {"type": "json_object"},
+        response = self._execute_with_retry(
+            effective_model,
+            system_prompt,
+            user_prompt,
+            schema,
         )
         content = response.output[0].content[0].text  # type: ignore[attr-defined]
         payload = json.loads(content)
         return ProviderResponse(model=effective_model, payload=payload)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    def _execute_with_retry(
+        self,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        schema: Mapping[str, Any],
+    ):
+        response_format = {"type": "json_object"}
+        if schema:
+            response_format = {"type": "json_schema", "json_schema": schema}
+        return self._client.responses.create(  # type: ignore[attr-defined]
+            model=model,
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format=response_format,
+        )
 
 
 class FallbackProvider(SummarizationProvider):
@@ -121,6 +139,8 @@ def provider_from_config(config: Mapping[str, Any]) -> SummarizationProvider:
             return provider
         except Exception as exc:  # pragma: no cover - optional dependency missing
             logger.warning("Falling back to heuristic provider: %s", exc)
+    else:
+        logger.info("OPENAI_API_KEY not set; using fallback summarization provider.")
 
     provider = FallbackProvider()
     if model:

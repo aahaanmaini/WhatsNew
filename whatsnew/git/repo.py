@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,8 @@ except ImportError:  # pragma: no cover - optional dependency, enforced at runti
     git = None  # type: ignore
 
 from ..utils.dates import RangeMode, RangeRequest
+
+logger = logging.getLogger(__name__)
 
 _SEMVER_RE = re.compile(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$")
 
@@ -123,6 +126,10 @@ def get_commit_range(repo: "git.Repo", request: RangeRequest) -> CommitRange:
             commits = list(repo.iter_commits(f"{start_ref}..HEAD"))
         else:
             fallback_used = True
+            logger.info(
+                "No tags found; falling back to %s-day window.",
+                request.fallback_window_days,
+            )
             commits = _commits_with_window(repo, _days_to_delta(request.fallback_window_days))
     elif request.mode is RangeMode.SHA_RANGE:
         end_ref = request.to_sha or "HEAD"
@@ -135,6 +142,10 @@ def get_commit_range(repo: "git.Repo", request: RangeRequest) -> CommitRange:
         commits = list(repo.iter_commits("HEAD", since=since, until=until))
         if not commits and request.fallback_window_days:
             fallback_used = True
+            logger.info(
+                "No commits matched the supplied date range; falling back to %s-day window.",
+                request.fallback_window_days,
+            )
             commits = _commits_with_window(repo, _days_to_delta(request.fallback_window_days))
     elif request.mode is RangeMode.WINDOW:
         commits = _commits_with_window(repo, request.window)
