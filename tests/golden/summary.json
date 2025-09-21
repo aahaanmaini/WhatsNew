@@ -1,0 +1,45 @@
+{
+  "repo": "example/whatsnew-test",
+  "range": {
+    "mode": "since-tag",
+    "summary": "since last tag",
+    "from": "v0.1.0",
+    "to": "HEAD"
+  },
+  "stats": {
+    "commits": 3,
+    "prs": 0
+  },
+  "sections": [
+    {
+      "title": "Features",
+      "items": [
+        {
+          "summary": "Feat: add onboarding flow",
+          "refs": [],
+          "labels": ["Feature"]
+        }
+      ]
+    },
+    {
+      "title": "Fixes",
+      "items": [
+        {
+          "summary": "Fix: handle empty input",
+          "refs": [],
+          "labels": ["Fix"]
+        }
+      ]
+    },
+    {
+      "title": "Docs",
+      "items": [
+        {
+          "summary": "Docs: update quickstart",
+          "refs": [],
+          "labels": ["Docs"]
+        }
+      ]
+    }
+  ]
+}
