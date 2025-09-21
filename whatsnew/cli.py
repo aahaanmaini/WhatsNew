@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
-import os
 from pathlib import Path
 from typing import Sequence
 
@@ -27,9 +27,13 @@ from .publish import (
     publish_summary,
 )
 from .summarize.map_step import run_map_step
-from .summarize.provider import provider_from_config
+from tenacity import RetryError
+
+from .summarize.provider import FallbackProvider, provider_from_config
 from .summarize.reduce_step import run_reduce_step
 from .utils.dates import RangeResolutionError, resolve_range_request
+
+logger = logging.getLogger(__name__)
 
 
 def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: bool) -> None:
@@ -285,8 +289,18 @@ def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
     _status("reading commits and pull requests...")
     changes = collect_changes(config, range_request)
     provider = provider_from_config(config.data)
-    _status("summarizing individual changes...")
-    map_items = run_map_step(config, changes, provider=provider)
+    provider_label = provider.default_model
+    _status(f"summarizing individual changes with {provider.name}...")
+    try:
+        map_items = run_map_step(config, changes, provider=provider)
+    except (RetryError, RuntimeError, Exception) as exc:
+        logger.warning("Primary provider failed: %s", exc)
+        if isinstance(provider, FallbackProvider):
+            raise
+        _status("primary provider failed, falling back to heuristic summaries...")
+        provider = FallbackProvider()
+        provider_label = provider.default_model
+        map_items = run_map_step(config, changes, provider=provider)
     _status("merging summaries...")
     reduce_result = run_reduce_step(config, map_items)
 
@@ -304,7 +318,7 @@ def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
         {
             "commit_count": len(changes.get("commits", [])),
             "pr_count": len(changes.get("prs", [])),
-            "model": provider.default_model,
+            "model": provider_label,
         }
     )
     summary["id"] = reduce_result.generated_at
@@ -326,12 +340,14 @@ def _render_summary(
     payload = build_json_payload(summary)
 
     if output_format == "json":
-        parser.exit(0, json.dumps(payload, indent=2) + "\n")
+        print(json.dumps(payload, indent=2))
+        return
     if output_format == "markdown":
-        parser.exit(0, build_markdown(summary) + "\n")
+        print(build_markdown(summary))
+        return
 
     output_text = render_terminal(summary)
-    parser.exit(0, output_text + "\n")
+    print(output_text)
 
 
 def _handle_publish(

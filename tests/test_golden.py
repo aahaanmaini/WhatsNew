@@ -31,7 +31,8 @@ def normalise_payload(data: dict) -> dict:
 def test_golden_summary(run_cli):
     result = run_cli("--json")
     actual = json.loads(result.stdout)
-    expected = json.loads(Path("tests/golden/summary.json").read_text(encoding="utf-8"))
+    golden_path = Path(__file__).resolve().parent / "golden" / "summary.json"
+    expected = json.loads(golden_path.read_text(encoding="utf-8"))
 
     actual_norm = normalise_payload(actual)
     expected_norm = normalise_payload(expected)

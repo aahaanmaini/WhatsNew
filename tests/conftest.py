@@ -49,7 +49,15 @@ def sample_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def run_cli(sample_repo: Path):
     def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{Path(__file__).resolve().parents[1]}:{env.get('PYTHONPATH', '')}".rstrip(":")
         cmd = [os.sys.executable, "-m", "whatsnew.cli", *args]
-        return subprocess.run(cmd, capture_output=True, text=True, check=check)
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=check,
+            env=env,
+        )
 
     return _run
