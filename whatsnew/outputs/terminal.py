@@ -7,33 +7,48 @@ from typing import Any, Dict, Mapping
 
 try:  # pragma: no cover - optional dependency
     from rich.console import Console
+    from rich.panel import Panel
     from rich.table import Table
 except ImportError:  # pragma: no cover - optional dependency
     Console = None  # type: ignore
+    Panel = None  # type: ignore
     Table = None  # type: ignore
+
+from .json_out import build_json_payload
 
 
 def render_terminal(summary: Mapping[str, Any], *, use_rich: bool = True) -> str:
     """Return a string representation suitable for terminal output."""
 
-    if use_rich and Console and Table:
-        return _render_with_rich(summary)
-    return _render_plain_text(summary)
+    payload = build_json_payload(summary)
+    if use_rich and Console and Table and Panel:
+        return _render_with_rich(payload)
+    return _render_plain_text(payload)
 
 
-def _render_with_rich(summary: Mapping[str, Any]) -> str:
+def _render_with_rich(payload: Mapping[str, Any]) -> str:
     console = Console(record=True)
-    repo = summary.get("repository", {})
-    range_info = summary.get("range", {})
-    console.print(
-        f"[bold]whatsnew[/bold] · {repo.get('owner','?')}/{repo.get('name','?')} · {range_info.get('summary','')}"
-    )
-    table = Table(show_header=True, header_style="bold magenta")
+    repo = payload.get("repo", "?")
+    range_info = payload.get("range", {})
+    header = f"[bold]whatsnew[/bold] · {repo} · {range_info.get('summary', '')}"
+
+    stats = payload.get("stats", {})
+    provenance = payload.get("provenance", {})
+    stats_line = f"commits={stats.get('commits')}, prs={stats.get('prs')}"
+    prov_line = f"generated_by={provenance.get('generated_by')} model={provenance.get('model')}"
+
+    console.print(Panel.fit(header, border_style="magenta"))
+    console.print(f"[dim]{stats_line} | {prov_line}[/dim]")
+
+    table = Table(show_header=True, header_style="bold cyan", box=None, expand=True)
     table.add_column("Section", style="bold")
     table.add_column("Summary")
-    for section in summary.get("sections", []):
+    for section in payload.get("sections", []):
         title = section.get("title", "")
-        for item in section.get("items", []):
+        entries = section.get("items", []) or []
+        if not entries:
+            continue
+        for item in entries:
             refs = ", ".join(item.get("refs", []))
             text = item.get("summary", "")
             if refs:
@@ -43,37 +58,37 @@ def _render_with_rich(summary: Mapping[str, Any]) -> str:
     if not table.rows:
         table.add_row("No changes", "All changes were internal this period.")
     console.print(table)
-    meta = summary.get("meta", {})
-    dropped = meta.get("dropped_internal", 0)
-    if dropped:
-        console.print(f"[dim]{dropped} internal updates hidden[/dim]")
     return console.export_text(styles=True)
 
 
-def _render_plain_text(summary: Mapping[str, Any]) -> str:
-    lines = []
-    repo = summary.get("repository", {})
-    range_info = summary.get("range", {})
-    header = f"whatsnew · {repo.get('owner','?')}/{repo.get('name','?')} · {range_info.get('summary','')}"
+def _render_plain_text(payload: Mapping[str, Any]) -> str:
+    lines: list[str] = []
+    repo = payload.get("repo", "?")
+    range_info = payload.get("range", {})
+    header = f"whatsnew · {repo} · {range_info.get('summary', '')}"
     lines.append(header.strip())
     lines.append("".join("-" for _ in header))
-    sections = summary.get("sections", [])
+
+    sections = payload.get("sections", []) or []
     if not sections:
         lines.append("No user-visible changes in this range.")
     for section in sections:
         title = section.get("title", "")
-        if not section.get("items"):
+        entries = section.get("items", []) or []
+        if not entries:
             continue
         lines.append(f"\n{title}")
-        for item in section.get("items", []):
+        for item in entries:
             refs = ", ".join(item.get("refs", []))
             summary_text = item.get("summary", "")
             bullet = f"- {summary_text}"
             if refs:
                 bullet += f" ({refs})"
             lines.append(textwrap.fill(bullet, width=88, subsequent_indent="  "))
-    meta = summary.get("meta", {})
-    dropped = meta.get("dropped_internal", 0)
-    if dropped:
-        lines.append(f"\n({dropped} internal updates hidden)")
+
+    stats = payload.get("stats", {})
+    provenance = payload.get("provenance", {})
+    lines.append(
+        "\n" + f"Stats: commits={stats.get('commits')} prs={stats.get('prs')} | Model: {provenance.get('model')}"
+    )
     return "\n".join(lines)

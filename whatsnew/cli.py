@@ -11,15 +11,13 @@ from typing import Sequence
 from . import __version__
 from .config import get_config
 from .ingest.collect import collect_changes
+from .outputs.json_out import build_json_payload
+from .outputs.md_out import build_markdown
 from .outputs.terminal import render_terminal
 from .summarize.map_step import run_map_step
 from .summarize.provider import provider_from_config
 from .summarize.reduce_step import run_reduce_step
-from .utils.dates import (
-    RangeResolutionError,
-    resolve_range_request,
-    summarize_range_request,
-)
+from .utils.dates import RangeResolutionError, resolve_range_request
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -134,20 +132,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         {
             "repository": changes.get("repository", {}),
             "range": changes.get("range", {}),
+            "commits": changes.get("commits", []),
+            "prs": changes.get("prs", []),
         }
     )
+    summary["meta"].update(
+        {
+            "commit_count": len(changes.get("commits", [])),
+            "pr_count": len(changes.get("prs", [])),
+            "model": provider.default_model,
+        }
+    )
+    summary["id"] = reduce_result.generated_at
 
     output_format = config.data.get("output", {}).get("format", "terminal")
     if args.output_format:
         output_format = args.output_format
 
-    if output_format == "json":
-        parser.exit(0, json.dumps(summary, indent=2) + "\n")
-    if output_format == "markdown":
-        parser.exit(0, _summary_to_markdown(summary) + "\n")
+    payload = build_json_payload(summary)
 
-    summary["sections"] = summary.get("sections", [])
-    summary["meta"] = summary.get("meta", reduce_result.to_dict().get("meta", {}))
+    if output_format == "json":
+        parser.exit(0, json.dumps(payload, indent=2) + "\n")
+    if output_format == "markdown":
+        parser.exit(0, build_markdown(summary) + "\n")
+
     output_text = render_terminal(summary)
     parser.exit(0, output_text + "\n")
 
@@ -164,34 +172,6 @@ def _collect_cli_overrides(args: argparse.Namespace) -> dict:
         overrides["drop_internal"] = not args.include_internal
 
     return overrides
-
-
-def _summary_to_markdown(summary: dict) -> str:
-    lines = []
-    repo = summary.get("repository", {})
-    range_info = summary.get("range", {})
-    lines.append(f"# whatsnew for {repo.get('owner','?')}/{repo.get('name','?')}")
-    lines.append("")
-    lines.append(f"_Range: {range_info.get('summary','')}_")
-    lines.append("")
-    sections = summary.get("sections", [])
-    if not sections:
-        lines.append("No user-visible changes in this range.")
-        return "\n".join(lines)
-    for section in sections:
-        title = section.get("title", "")
-        items = section.get("items", [])
-        if not items:
-            continue
-        lines.append(f"## {title}")
-        for item in items:
-            refs = ", ".join(item.get("refs", []))
-            bullet = item.get("summary", "")
-            if refs:
-                bullet += f" ({refs})"
-            lines.append(f"- {bullet}")
-        lines.append("")
-    return "\n".join(lines).strip()
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
