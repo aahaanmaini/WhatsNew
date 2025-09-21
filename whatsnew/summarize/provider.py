@@ -8,9 +8,15 @@ from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
 try:  # pragma: no cover - optional dependency
+    from cerebras.cloud import Cerebras  # type: ignore
+except ImportError:  # pragma: no cover
+    Cerebras = None  # type: ignore
+
+try:  # pragma: no cover - optional dependency
     import requests
 except ImportError:  # pragma: no cover
     requests = None  # type: ignore
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
@@ -70,11 +76,12 @@ class OpenAIProvider(SummarizationProvider):
     ) -> ProviderResponse:
         effective_model = model or self.default_model
         schema = json_schema or {}
+        response_format = _build_response_format(schema if schema else None)
         response = self._execute_with_retry(
             effective_model,
             system_prompt,
             user_prompt,
-            schema,
+            response_format,
         )
         content = response.output[0].content[0].text  # type: ignore[attr-defined]
         payload = json.loads(content)
@@ -86,11 +93,8 @@ class OpenAIProvider(SummarizationProvider):
         model: str,
         system_prompt: str,
         user_prompt: str,
-        schema: Mapping[str, Any],
+        response_format: Mapping[str, Any],
     ):
-        response_format = {"type": "json_object"}
-        if schema:
-            response_format = {"type": "json_schema", "json_schema": schema}
         return self._client.responses.create(  # type: ignore[attr-defined]
             model=model,
             input=[
@@ -130,20 +134,33 @@ class FallbackProvider(SummarizationProvider):
         return ProviderResponse(model=model or self.default_model, payload=payload)
 
 
+def _build_response_format(schema: Mapping[str, Any] | None) -> Dict[str, Any]:
+    if not schema:
+        return {"type": "json_object"}
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "schema": schema,
+            "name": "WhatsNewSummary",
+        },
+    }
+
+
 class CerebrasProvider(SummarizationProvider):
     """Implementation backed by Cerebras Inference API."""
 
     name = "cerebras"
-    default_model = "llama3.1-8b"
+    default_model = "llama3.3-70b"
 
     def __init__(self, api_key: str, base_url: str | None = None, default_model: str | None = None) -> None:
         self._api_key = api_key
         self._base_url = base_url or "https://api.cerebras.ai/v1/chat/completions"
         if default_model:
             self.default_model = default_model
+        self._sdk_client = Cerebras(api_key=api_key) if Cerebras is not None else None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
-    def _request(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    def _request_http(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         if requests is None:
             raise RuntimeError("requests library is required for the Cerebras provider")
         response = requests.post(  # type: ignore[no-any-unimported]
@@ -157,6 +174,26 @@ class CerebrasProvider(SummarizationProvider):
         )
         response.raise_for_status()
         return response.json()
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    def _request_sdk(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        schema: Mapping[str, Any] | None,
+    ) -> Dict[str, Any]:
+        if self._sdk_client is None:
+            raise RuntimeError("Cerebras SDK is not installed; install cerebras-cloud-sdk")
+        kwargs: Dict[str, Any] = {"model": model, "messages": messages}
+        kwargs["response_format"] = _build_response_format(schema)
+
+        response = self._sdk_client.chat.completions.create(**kwargs)
+        # The SDK returns a pydantic object; convert to dict
+        if hasattr(response, "model_dump"):
+            return response.model_dump()
+        if isinstance(response, dict):
+            return response
+        raise RuntimeError("Unexpected response type from Cerebras SDK")
 
     def generate(
         self,
@@ -172,16 +209,18 @@ class CerebrasProvider(SummarizationProvider):
             {"role": "user", "content": user_prompt},
         ]
 
+        response_format = _build_response_format(json_schema)
         payload: Dict[str, Any] = {
             "model": effective_model,
             "messages": messages,
+            "response_format": response_format,
         }
-        if json_schema:
-            payload["response_format"] = {"type": "json_schema", "json_schema": json_schema}
-        else:
-            payload["response_format"] = {"type": "json_object"}
 
-        data = self._request(payload)
+        if self._sdk_client is not None:
+            schema = response_format.get("json_schema", {}).get("schema") if json_schema else None
+            data = self._request_sdk(effective_model, messages, schema)
+        else:
+            data = self._request_http(payload)
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         payload_dict = json.loads(content)
         return ProviderResponse(model=effective_model, payload=payload_dict)

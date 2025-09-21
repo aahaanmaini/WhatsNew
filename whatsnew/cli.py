@@ -294,7 +294,8 @@ def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
     try:
         map_items = run_map_step(config, changes, provider=provider)
     except (RetryError, RuntimeError, Exception) as exc:
-        logger.warning("Primary provider failed: %s", exc)
+        _status(_format_provider_error(provider.name, exc))
+        logger.warning("Primary provider failed: %s", exc, exc_info=True)
         if isinstance(provider, FallbackProvider):
             raise
         _status("primary provider failed, falling back to heuristic summaries...")
@@ -515,6 +516,21 @@ def _stamp_release_metadata(summary: dict, tag: str | None) -> dict:
     summary["released_at"] = released_at
     summary.setdefault("meta", {})["released_at"] = released_at
     return summary
+
+
+def _format_provider_error(provider_name: str, exc: Exception) -> str:
+    underlying = exc
+    if isinstance(exc, RetryError):
+        underlying = exc.last_attempt.exception()
+    details = f"{type(underlying).__name__}: {underlying}"
+    if hasattr(underlying, "response") and getattr(underlying, "response") is not None:
+        response = underlying.response
+        try:
+            body = response.text
+        except Exception:  # pragma: no cover - defensive
+            body = "<unavailable>"
+        details += f" | status={response.status_code} body={body}"
+    return f"{provider_name} provider error: {details}"
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

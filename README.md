@@ -9,6 +9,11 @@ pipx install --editable .
 whatsnew --help
 ```
 
+### Optional provider dependencies
+
+- OpenAI: `pip install openai`
+- Cerebras: `pip install cerebras-cloud-sdk`
+
 ## GitHub Action
 
 This repository ships with a ready-to-use workflow at `.github/workflows/whatsnew.yml` that:
