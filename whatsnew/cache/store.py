@@ -75,6 +75,15 @@ class CacheStore:
         self._write_entry(key, entry)
         return entry
 
+
+    def invalidate(self, key: str) -> None:
+        """Remove a cached entry if it exists."""
+        path = self._path_for_key(key)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+
     def _read_entry(self, key: str) -> CacheEntry | None:
         path = self._path_for_key(key)
         if not path.is_file():

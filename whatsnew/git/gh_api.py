@@ -8,7 +8,10 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Sequence, Set
 
-import requests
+try:  # pragma: no cover - optional dependency
+    import requests
+except ImportError:  # pragma: no cover - optional dependency
+    requests = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +84,19 @@ class GitHubClient:
         self.owner = owner
         self.repo = repo
         self.base_url = f"https://api.github.com/repos/{owner}/{repo}"
-        self._session = session or requests.Session()
+        if requests is None:
+            self._session = None
+        else:
+            self._session = session or requests.Session()
         self._token = token or os.environ.get("GH_TOKEN")
 
     def fetch_pulls_for_commits(self, shas: Sequence[str]) -> Dict[str, List[PullRequestInfo]]:
         """Return pull requests associated with each commit SHA."""
 
         results: Dict[str, List[PullRequestInfo]] = {}
+        if requests is None:
+            logger.debug("requests library unavailable; skipping PR hydration")
+            return results
         for sha in shas:
             try:
                 pulls = self._request(
@@ -107,6 +116,9 @@ class GitHubClient:
         return results
 
     def fetch_pull(self, number: int) -> PullRequestInfo | None:
+        if requests is None:
+            logger.debug("requests library unavailable; skipping pull fetch")
+            return None
         try:
             payload = self._request("GET", f"/pulls/{number}")
         except requests.RequestException as exc:  # pragma: no cover - network dependent
@@ -118,6 +130,9 @@ class GitHubClient:
 
     def fetch_issues(self, numbers: Iterable[int]) -> Dict[int, IssueInfo]:
         results: Dict[int, IssueInfo] = {}
+        if requests is None:
+            logger.debug("requests library unavailable; skipping issue fetch")
+            return results
         for number in numbers:
             try:
                 payload = self._request("GET", f"/issues/{number}")
@@ -139,6 +154,8 @@ class GitHubClient:
         *,
         headers: Mapping[str, str] | None = None,
     ) -> dict | list | None:
+        if requests is None or self._session is None:
+            raise RuntimeError("requests library is required for GitHub API access")
         url = f"{self.base_url}{path}"
         request_headers = {
             "Accept": "application/vnd.github+json",
