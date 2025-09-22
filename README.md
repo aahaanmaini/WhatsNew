@@ -1,7 +1,8 @@
 # What’s New?
 
 Generate crisp, developer-facing changelogs straight from Git. 
-`whatsnew` scans commits/PRs/issues + high-signal diff hunks, runs a disciplined LLM **map → reduce** summarization, and (optionally) publishes to `gh-pages` so your public viewer updates instantly.
+
+`whatsnew` scans commits/PRs/issues + high-signal diff hunks, runs a disciplined LLM **map → reduce** summarization, and (optionally) publishes to gh-pages so your public viewer updates instantly.
 
 ---
 
