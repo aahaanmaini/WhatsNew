@@ -233,6 +233,43 @@ We cache per-unit summaries, so reruns don’t re-call the LLM unnecessarily. On
 
 ---
 
+## 🔮 Future Work
+
+We built `whatsnew` to be a polished, standalone demo. If this project were to evolve into a full developer tool, here are the natural next steps:
+
+- **Smarter summarization**
+  - Add fine-grained prompts per change type (UI, API, infra, docs).
+  - Train lightweight local models for offline/air-gapped environments.
+  - Better deduplication across PRs/commits to avoid repetition.
+
+- **Configurable output**
+  - YAML/JSON config to control sectioning, length caps, and release naming conventions.
+  - Support for custom templates (Markdown, HTML, Slack messages, etc).
+
+- **Expanded integrations**
+  - GitLab and Bitbucket support in addition to GitHub.
+  - Slack/Teams webhooks to push changelogs directly into developer channels.
+  - Publish to npm or PyPI registries for libraries.
+
+- **Web viewer enhancements**
+  - Authenticated changelog viewers for private repos.
+  - Search/filter by tags, labels, or contributors.
+  - Richer release timelines (graphs, stats, comparisons).
+
+- **Developer experience**
+  - Interactive `whatsnew init` wizard to configure provider keys and defaults.
+  - Richer diagnostics in `whatsnew check` (detect missing tokens, key expiry).
+  - Optional local embeddings index for semantic grouping of related commits.
+
+- **Scalability & cost control**
+  - Batch summarization to reduce provider API calls.
+  - Smarter caching across branches and forks.
+  - Pluggable backoff strategies to handle rate limits gracefully.
+
+These features are designed to expand `whatsnew` from a take-home demo into a production-ready developer companion — while keeping the CLI-first philosophy and “just works” defaults.
+
+---
+
 ## 🤖 AI Tools Used
 
 - **ChatGPT**: Brainstorm and talk through product decisions  
