@@ -141,6 +141,11 @@ def _write_artifacts(
         nojekyll.write_text("", encoding="utf-8")
         files.append(Path(".nojekyll"))
 
+    if tag:
+        index_rel = _update_release_index(worktree_root, publish_cfg, payload, tag)
+        if index_rel:
+            files.append(index_rel)
+
     return files
 
 
@@ -205,3 +210,59 @@ def _is_private_repo(repo_meta, config: WhatsNewConfig) -> bool:
     except Exception:
         logger.debug("Unable to determine repository visibility; assuming public.")
         return False
+
+
+def _update_release_index(
+    root: Path,
+    publish_cfg: PublishConfig,
+    payload: dict,
+    tag: str | None,
+) -> Path | None:
+    entry = _build_index_entry(publish_cfg, payload, tag)
+    if entry is None:
+        return None
+    index_rel = publish_cfg.releases_dir / "index.json"
+    _ensure_parents(root, index_rel)
+    index_path = root / index_rel
+    existing_text = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
+    merged = _merge_index_entries(existing_text, entry)
+    index_path.write_text(merged, encoding="utf-8")
+    return index_rel
+
+
+def _build_index_entry(
+    publish_cfg: PublishConfig,
+    payload: dict,
+    tag: str | None,
+) -> dict | None:
+    released_at = payload.get("released_at") or payload.get("id")
+    if not released_at:
+        return None
+    label = payload.get("label") or tag or ("latest" if not tag else tag)
+    entry = {
+        "tag": tag,
+        "label": label,
+        "released_at": released_at,
+        "range": payload.get("range", {}),
+        "stats": payload.get("stats", {}),
+        "path": (
+            publish_cfg.release_path(tag).as_posix()
+            if tag
+            else publish_cfg.latest_path.as_posix()
+        ),
+    }
+    return entry
+
+
+def _merge_index_entries(existing_text: str, new_entry: dict) -> str:
+    try:
+        entries = json.loads(existing_text) if existing_text else []
+    except json.JSONDecodeError:
+        entries = []
+    if not isinstance(entries, list):
+        entries = []
+    label = new_entry.get("label")
+    entries = [entry for entry in entries if entry.get("label") != label]
+    entries.append(new_entry)
+    entries.sort(key=lambda entry: entry.get("released_at", ""), reverse=True)
+    return json.dumps(entries, indent=2) + "\n"

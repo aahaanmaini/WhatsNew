@@ -14,7 +14,13 @@ from typing import Sequence
 from . import __version__
 from .config import get_config
 from .ingest.collect import collect_changes
-from .git.repo import describe_repository, open_repository
+from .git.repo import (
+    describe_repository,
+    get_first_commit_sha,
+    get_previous_tag,
+    get_tag_commit,
+    open_repository,
+)
 from .outputs.json_out import build_json_payload
 from .outputs.md_out import build_markdown
 from .outputs.terminal import render_terminal
@@ -136,6 +142,7 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: 
         include_internal=None,
         drop_internal=None,
         private=False,
+        publish_label=None,
         tag=None,
         from_sha=None,
         to_sha=None,
@@ -197,6 +204,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="publish_preview",
         help="Preview changes instead of pushing them.",
     )
+    publish_parser.add_argument(
+        "--label",
+        dest="publish_label",
+        help="Friendly name to display for this release.",
+    )
 
     preview_parser = subparsers.add_parser(
         "preview",
@@ -208,6 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="publish_message",
         help="Commit message that would be used during publish.",
     )
+    preview_parser.add_argument(
+        "--label",
+        dest="publish_label",
+        help="Friendly name to display for this release.",
+    )
 
     release_parser = subparsers.add_parser(
         "release",
@@ -218,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--tag",
         required=True,
         help="Tag to generate release notes for.",
+    )
+    release_parser.add_argument(
+        "--label",
+        dest="publish_label",
+        help="Friendly name to display for this release.",
     )
 
     check_parser = subparsers.add_parser(
@@ -290,13 +312,90 @@ def _collect_cli_overrides(args: argparse.Namespace) -> dict:
     return overrides
 
 
+def _prepare_range_args(
+    args: argparse.Namespace, config: WhatsNewConfig
+) -> tuple[dict, dict[str, str | None]]:
+    args_dict = vars(args).copy()
+    range_meta: dict[str, str | None] = {}
+
+    command = getattr(args, "command", None)
+    tag = getattr(args, "tag", None)
+
+    explicit_range_flags = any(
+        getattr(args, flag, None)
+        for flag in ("from_sha", "to_sha", "since_date", "until_date", "window")
+    )
+
+    if command in {"publish", "preview", "release"} and tag and not explicit_range_flags:
+        repo = open_repository(config.repo_root)
+        try:
+            tag_commit = get_tag_commit(repo, tag)
+        except ValueError as exc:
+            raise RangeResolutionError(str(exc)) from exc
+
+        previous_tag = get_previous_tag(repo, tag)
+        if previous_tag:
+            from_sha = get_tag_commit(repo, previous_tag).hexsha
+        else:
+            from_sha = get_first_commit_sha(repo)
+
+        to_sha = tag_commit.hexsha
+        if from_sha == to_sha:
+            raise RangeResolutionError(
+                "No commits found between the previous reference and the specified tag."
+            )
+
+        args_dict = dict(args_dict)
+        args_dict["tag"] = None
+        args_dict["from_sha"] = from_sha
+        args_dict["to_sha"] = to_sha
+        range_meta = {
+            "from_tag": previous_tag,
+            "to_tag": tag,
+            "from_sha": from_sha,
+            "to_sha": to_sha,
+        }
+
+    return args_dict, range_meta
+
+
+def _resolve_release_label(
+    args: argparse.Namespace,
+    config: WhatsNewConfig,
+    range_meta: dict[str, str | None],
+) -> str | None:
+    command = getattr(args, "command", None)
+    if command not in {"publish", "preview", "release"}:
+        return None
+
+    label_override = getattr(args, "publish_label", None)
+    if isinstance(label_override, str) and label_override.strip():
+        return label_override.strip()
+
+    publish_cfg = config.data.get("publish", {}) if isinstance(config.data, dict) else {}
+    tag = range_meta.get("to_tag") or getattr(args, "tag", None)
+
+    labels_cfg = publish_cfg.get("labels")
+    if isinstance(labels_cfg, dict) and tag and labels_cfg.get(tag):
+        label = labels_cfg.get(tag)
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+
+    default_label = publish_cfg.get("label")
+    if isinstance(default_label, str) and default_label.strip():
+        return default_label.strip()
+
+    return None
+
+
 def _status(message: str) -> None:
     print(f"whatsnew: {message}", file=sys.stderr, flush=True)
 
 
 def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
+    args_for_range, range_meta = _prepare_range_args(args, config)
     _status("resolving commit range...")
-    range_request = resolve_range_request(vars(args), config.data)
+    range_request = resolve_range_request(args_for_range, config.data)
     _status("reading commits and pull requests...")
     changes = collect_changes(config, range_request)
     provider = provider_from_config(config.data)
@@ -333,6 +432,29 @@ def _generate_summary(args: argparse.Namespace, config: WhatsNewConfig) -> dict:
             "model": provider_label,
         }
     )
+    if range_meta:
+        for key, value in range_meta.items():
+            if value is not None:
+                meta[key] = value
+        range_info = summary.get("range", {}) or {}
+        range_info.setdefault("mode", "tag-range")
+        if range_meta.get("from_tag"):
+            range_info["from_tag"] = range_meta["from_tag"]
+        range_info["to_tag"] = range_meta.get("to_tag")
+        if range_meta.get("from_sha"):
+            range_info["from"] = range_meta["from_sha"]
+        if range_meta.get("to_sha"):
+            range_info["to"] = range_meta["to_sha"]
+        summary["range"] = range_info
+
+    label_override = _resolve_release_label(args, config, range_meta)
+    if label_override:
+        meta["label"] = label_override
+    tag_override = range_meta.get("to_tag")
+    if tag_override:
+        meta["tag"] = tag_override
+        summary["tag"] = tag_override
+
     summary["id"] = reduce_result.generated_at
 
     return summary

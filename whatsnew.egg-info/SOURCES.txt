@@ -1,6 +1,11 @@
 LICENSE
 README.md
 pyproject.toml
+tests/test_cli.py
+tests/test_dates.py
+tests/test_diffs.py
+tests/test_golden.py
+tests/test_reduce.py
 whatsnew/__init__.py
 whatsnew/cli.py
 whatsnew/config.py

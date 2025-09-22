@@ -39,6 +39,7 @@ def build_json_payload(summary: Mapping[str, Any]) -> Dict[str, Any]:
     timestamp = summary.get("id") or _iso_now()
     released_at = summary.get("released_at") or meta.get("released_at") or timestamp
     tag = summary.get("tag") or meta.get("tag")
+    label = meta.get("label")
     stats = {
         "commits": meta.get("commit_count", len(summary.get("commits", []))),
         "prs": meta.get("pr_count", len(summary.get("prs", []))),
@@ -52,9 +53,13 @@ def build_json_payload(summary: Mapping[str, Any]) -> Dict[str, Any]:
     range_payload = {
         "mode": range_info.get("mode"),
         "summary": range_info.get("summary"),
-        "from": range_info.get("start_ref"),
-        "to": range_info.get("end_ref"),
+        "from": range_info.get("from") or range_info.get("start_ref"),
+        "to": range_info.get("to") or range_info.get("end_ref"),
     }
+    if range_info.get("from_tag"):
+        range_payload["from_tag"] = range_info.get("from_tag")
+    if range_info.get("to_tag"):
+        range_payload["to_tag"] = range_info.get("to_tag")
 
     result = {
         "id": timestamp,
@@ -67,6 +72,8 @@ def build_json_payload(summary: Mapping[str, Any]) -> Dict[str, Any]:
     }
     if tag:
         result["tag"] = tag
+    if label:
+        result["label"] = label
     return result
 
 

@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 try:  # pragma: no cover - optional dependency, enforced at runtime
     import git  # type: ignore
@@ -245,3 +245,24 @@ def _tag_sort_key(tag_name: str) -> tuple[int, int, int, str]:
     minor = int(match.group(2)) if match.group(2) else 0
     patch = int(match.group(3)) if match.group(3) else 0
     return (major, minor, patch, tag_name)
+
+
+def get_tag_commit(repo: "git.Repo", tag_name: str) -> "git.Commit":
+    try:
+        return repo.commit(tag_name)
+    except Exception as exc:  # pragma: no cover - depends on git state
+        raise ValueError(f"Tag '{tag_name}' was not found in this repository.") from exc
+
+
+def get_previous_tag(repo: "git.Repo", tag_name: str) -> Optional[str]:
+    try:
+        candidate = repo.git.describe("--tags", "--abbrev=0", f"{tag_name}^")
+    except git.GitCommandError:
+        return None
+    candidate = candidate.strip()
+    return candidate or None
+
+
+def get_first_commit_sha(repo: "git.Repo") -> str:
+    rev_list = repo.git.rev_list("--max-parents=0", "HEAD")
+    return rev_list.splitlines()[0]
