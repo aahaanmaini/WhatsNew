@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Generate concise changelogs from git history."
 readme = "README.md"
 license = {text = "MIT"}
-authors = [{name = "WhatsNew Maintainers"}]
+authors = [{name = "Aahaan Maini"}]
 requires-python = ">=3.10"
 dependencies = [
     "requests",
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/whatsnew-cli/whatsnew"
+Homepage = "https://github.com/aahaanmaini/whatsnew"
 
 [project.scripts]
 whatsnew = "whatsnew.cli:main"
