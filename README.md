@@ -266,8 +266,6 @@ We built `whatsnew` to be a polished, standalone demo. If this project were to e
   - Smarter caching across branches and forks.
   - Pluggable backoff strategies to handle rate limits gracefully.
 
-These features are designed to expand `whatsnew` from a take-home demo into a production-ready developer companion — while keeping the CLI-first philosophy and “just works” defaults.
-
 ---
 
 ## 🤖 AI Tools Used
