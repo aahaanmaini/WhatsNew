@@ -1,6 +1,6 @@
 # What’s New?
 
-Generate crisp, developer-facing changelogs straight from Git. 
+Generate crisp, user-facing changelogs straight from Git.  
 
 `whatsnew` scans commits/PRs/issues + high-signal diff hunks, runs a disciplined LLM **map → reduce** summarization, and (optionally) publishes to gh-pages so your public viewer updates instantly.
 
@@ -10,7 +10,7 @@ Generate crisp, developer-facing changelogs straight from Git.
 
 **1) Install (Python ≥ 3.10)**  
 ```bash
-pip install whatsnew
+pip install git+https://github.com/aahaanmaini/WhatsNew.git
 ```
 
 **2) Set environment variables (use what you have)**
@@ -21,7 +21,7 @@ export OPENAI_API_KEY=sk-...
 # or
 export CEREBRAS_API_KEY=...            
 
-# recommended so PR/issue context is rich (public/private):
+# strongly recommended to avoid GitHub API rate limits
 export GH_TOKEN=ghp_...                
 ```
 
@@ -42,10 +42,10 @@ whatsnew publish --window 14d --label "Week 37"
 
 # publish a tagged release (prev tag → v0.2.0) and update releases/v0.2.0.json
 git tag v0.2.0 && git push origin v0.2.0
-whatsnew publish --tag v0.2.0 --label "Autumn 2024"
+whatsnew publish --tag v0.2.0
 ```
 
-**4) View it publicly** 
+**4) ⭐ View it publicly**  
 
 👉 Visit [https://whatsnew-cli.vercel.app](https://whatsnew-cli.vercel.app).  
 The homepage will guide you to the correct project.
@@ -64,6 +64,7 @@ The homepage will guide you to the correct project.
 * **Zero-backend viewer** — public Next.js site reads JSON from `gh-pages`; updates as soon as you push.
 * **Caching built-in** — per-commit summaries are cached to avoid re-calling the provider for unchanged history.
 * **Retries with clear messaging** — automatic retries on provider/API errors with actionable logs.
+* **GH_TOKEN integration** — if you want private repo PRs/issues included, or to avoid hitting GitHub’s low anonymous API rate limit, configure `GH_TOKEN`. Highly recommended.
 
 <details>
 <summary><b>Example GitHub Action</b></summary>
@@ -79,13 +80,67 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - run: pip install whatsnew
+      - run: pip install git+https://github.com/aahaanmaini/WhatsNew.git
       - name: Publish changelog
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # or CEREBRAS_API_KEY
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: whatsnew publish --tag "${GITHUB_REF_NAME}"
 ```
+
+</details>
+
+---
+
+## ⚠️ Using with Private Repositories
+
+Publishing to `gh-pages` **does not work for private repos by default**.  
+
+### Why it’s blocked
+- `whatsnew publish` writes JSON to the `gh-pages` branch.  
+- The hosted viewer at [whatsnew-cli.vercel.app](https://whatsnew-cli.vercel.app) only works if GitHub Pages can serve that JSON.  
+- GitHub Pages **only serves for public repos**.  
+- Pushing from a private repo would leak commit metadata to the internet.  
+- To protect you, the CLI checks repo visibility and raises an error unless you explicitly override.
+
+### Options if you need private workflows
+
+<details>
+<summary><b>1. Generate artifacts locally</b></summary>
+
+```bash
+whatsnew --json > changelog.json
+whatsnew --md   > changelog.md
+whatsnew release --tag v1.2.0 --label "Autumn 2024" > release.md
+```
+
+</details>
+
+<details>
+<summary><b>2. Force-publish (with caution)</b></summary>
+
+- Add a PAT with `repo` scope to `GH_TOKEN`.  
+- Run with `--force-publish`:  
+  ```bash
+  whatsnew publish --tag v1.2.0 --label "Autumn 2024" --force-publish
+  ```  
+- This will push to `gh-pages`, but GitHub still won’t host it publicly.
+
+</details>
+
+<details>
+<summary><b>3. Host the JSON yourself</b></summary>
+
+- Move `data/latest.json` and `data/releases/index.json` to an S3 bucket, internal Pages, or any static site behind your own auth.  
+- Point your viewer to that location.
+
+</details>
+
+<details>
+<summary><b>4. Stick to local outputs</b></summary>
+
+- Skip pushing altogether.  
+- Rely on the `--json` / `--md` exports in your own release tooling.
 
 </details>
 
