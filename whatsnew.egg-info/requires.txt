@@ -1,8 +1,0 @@
-requests
-PyYAML
-rich
-tenacity
-gitpython
-python-dateutil
-openai>=1.41.0
-cerebras-cloud-sdk>=1.5.0

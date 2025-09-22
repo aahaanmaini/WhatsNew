@@ -28,3 +28,5 @@ htmlcov/
 
 # Project specific
 .whatsnew/cache/
+
+**/whatsnew.egg-info/
