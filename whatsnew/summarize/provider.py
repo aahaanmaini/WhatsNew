@@ -150,7 +150,7 @@ class CerebrasProvider(SummarizationProvider):
     """Implementation backed by Cerebras Inference API."""
 
     name = "cerebras"
-    default_model = "llama3.3-70b"
+    default_model = "qwen-3-32b"
 
     def __init__(self, api_key: str, base_url: str | None = None, default_model: str | None = None) -> None:
         self._api_key = api_key
@@ -289,18 +289,20 @@ def _fallback_summary(context: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _classify_from_labels(title: str, body: str, labels: list[str]) -> str:
     text = f"{title}\n{body}".lower()
-    if any("break" in label for label in labels) or "breaking" in text:
-        return "breaking"
     if any(label in {"feature", "enhancement", "feat"} for label in labels) or "feature" in text:
         return "feature"
     if any(label in {"bug", "fix"} for label in labels) or "fix" in text or "bug" in text:
         return "fix"
-    if "doc" in text or any("doc" in label for label in labels):
-        return "docs"
-    if "perf" in text or any("perf" in label for label in labels):
-        return "perf"
-    if "security" in text or any("security" in label for label in labels):
-        return "security"
+    if (
+        "doc" in text
+        or "perf" in text
+        or "security" in text
+        or "performance" in text
+        or any("doc" in label for label in labels)
+        or any("perf" in label for label in labels)
+        or any("sec" in label for label in labels)
+    ):
+        return "improvement"
     if "refactor" in text or any(label in {"chore", "internal"} for label in labels):
         return "internal"
-    return "feature"
+    return "improvement"

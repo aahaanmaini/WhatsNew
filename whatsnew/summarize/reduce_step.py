@@ -10,31 +10,21 @@ from ..config import WhatsNewConfig
 from .map_step import MapItem
 
 DEFAULT_SECTION_ORDER = [
-    "Breaking changes",
     "Features",
     "Fixes",
-    "Performance",
-    "Security",
-    "Docs",
+    "Improvements",
 ]
 
 CLASS_TO_SECTION = {
-    "breaking": "Breaking changes",
     "feature": "Features",
     "fix": "Fixes",
-    "perf": "Performance",
-    "security": "Security",
-    "docs": "Docs",
-    "internal": "Internal",
+    "improvement": "Improvements",
 }
 
 CLASS_LABELS = {
-    "breaking": "Breaking change",
     "feature": "Feature",
     "fix": "Fix",
-    "perf": "Improvement",
-    "security": "Security",
-    "docs": "Docs",
+    "improvement": "Improvement",
     "internal": "Internal",
 }
 
@@ -63,35 +53,40 @@ def run_reduce_step(config: WhatsNewConfig, items: Iterable[MapItem]) -> ReduceR
     dropped_internal = 0
 
     for item in items:
-        if item.visibility == "internal" and item.classification not in {"perf", "security"}:
+        normalized_class = _normalize_classification(item.classification)
+        if normalized_class == "internal" or item.visibility == "internal":
             dropped_internal += 1
             continue
-        visible_items.append(item)
+        visible_items.append(_replace_classification(item, normalized_class))
 
     deduped = _dedupe_items(visible_items)
-    buckets: Dict[str, List[Dict[str, Any]]] = {section: [] for section in section_order}
+    buckets: Dict[str, List[MapItem]] = {section: [] for section in section_order}
 
     for item in deduped:
-        section = CLASS_TO_SECTION.get(item.classification, "Fixes")
+        section = CLASS_TO_SECTION.get(item.classification, "Improvements")
         if section not in buckets:
             buckets[section] = []
-        label = CLASS_LABELS.get(item.classification, item.classification.title())
-        buckets[section].append(
-            {
-                "summary": item.summary,
-                "refs": item.refs,
-                "labels": [label],
-            }
-        )
+        buckets[section].append(item)
 
     for section, section_items in buckets.items():
-        section_items.sort(key=lambda entry: (_score_refs(entry["refs"]), entry["summary"].lower()))
+        section_items.sort(key=_section_sort_key)
 
     ordered_sections: List[Dict[str, Any]] = []
     for section in section_order:
-        entries = buckets.get(section, [])
-        if not entries:
+        section_items = buckets.get(section, [])
+        if not section_items:
             continue
+        limited_items = section_items[:MAX_ITEMS_PER_SECTION]
+        entries: List[Dict[str, Any]] = []
+        for item in limited_items:
+            label = CLASS_LABELS.get(item.classification, item.classification.title())
+            entries.append(
+                {
+                    "summary": item.summary,
+                    "refs": item.refs,
+                    "labels": [label],
+                }
+            )
         ordered_sections.append({"title": section, "items": entries})
 
     generated_at = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc).isoformat()
@@ -110,18 +105,51 @@ def _resolve_section_order(config: WhatsNewConfig) -> List[str]:
 
 
 def _dedupe_items(items: Iterable[MapItem]) -> List[MapItem]:
-    seen: Dict[tuple, MapItem] = {}
+    seen: set[tuple[str, str]] = set()
     ordered: List[MapItem] = []
     for item in items:
-        key = (tuple(sorted(item.refs)), item.summary.lower())
+        summary_key = _normalize_summary(item.summary)
+        key = (item.classification, summary_key)
         if key in seen:
             continue
-        seen[key] = item
+        seen.add(key)
         ordered.append(item)
     return ordered
 
 
-def _score_refs(refs: List[str]) -> tuple:
-    primary = -len(refs)
-    ref_text = ",".join(refs)
-    return (primary, ref_text)
+def _normalize_summary(summary: str) -> str:
+    return " ".join(summary.lower().split())
+
+
+def _section_sort_key(item: MapItem) -> tuple:
+    pr_priority = 0 if item.source_type == "pull_request" else 1
+    ref_priority = -len(item.refs)
+    return (pr_priority, ref_priority, _normalize_summary(item.summary))
+
+
+def _normalize_classification(classification: str) -> str:
+    value = (classification or "").lower()
+    mapping = {
+        "perf": "improvement",
+        "performance": "improvement",
+        "docs": "improvement",
+        "documentation": "improvement",
+        "security": "improvement",
+        "breaking": "improvement",
+    }
+    return mapping.get(value, value)
+
+
+def _replace_classification(item: MapItem, classification: str) -> MapItem:
+    if item.classification == classification:
+        return item
+    return MapItem(
+        source_id=item.source_id,
+        source_type=item.source_type,
+        summary=item.summary,
+        classification=classification,
+        visibility=item.visibility,
+        refs=item.refs,
+        metadata=item.metadata,
+    )
+MAX_ITEMS_PER_SECTION = 5

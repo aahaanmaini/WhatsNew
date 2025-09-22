@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterable, List, Mapping
 
-MAP_SYSTEM_PROMPT = """You are generating a public changelog for developers."""
+MAP_SYSTEM_PROMPT = (
+    "You write concise changelog blurbs that clearly state what changed."
+)
 MAP_JSON_SCHEMA: Dict[str, Any] = {
     "name": "MapSummary",
     "type": "object",
@@ -75,10 +77,11 @@ def build_map_user_prompt(context: Mapping[str, Any]) -> str:
     context_json = json.dumps(context, indent=2, sort_keys=True)
     return (
         "Given this change context (title, body, labels, linked issues, file paths, diff stats, and selected code hunks),\n"
-        "- Write ONE user-facing sentence describing the change and its impact.\n"
-        "- Classify one of: feature, fix, perf, docs, security, breaking, internal.\n"
-        "- If internal-only (no user impact), mark as internal.\n"
-        "Return JSON: {\"summary\":\"...\", \"class\":\"...\", \"visibility\":\"user-visible|internal\", \"refs\":[...]}.\n"
+        "- Write ONE short sentence (<=18 words) that states the actual change.\n"
+        "- Do not copy commit or PR titles verbatim; synthesize the core change instead.\n"
+        "- Classify one of: feature, fix, improvement, internal.\n"
+        "- Set visibility to internal only if the change has no external effect.\n"
+        "Return JSON: {\"summary\":\"...\", \"class\":\"feature|fix|improvement|internal\", \"visibility\":\"user-visible|internal\", \"refs\":[...]}.\n"
         "\nchange context:\n"
         f"{context_json}\n"
     )
@@ -93,10 +96,11 @@ def build_reduce_user_prompt(items: Iterable[Mapping[str, Any]], section_order: 
     }
     data_json = json.dumps(payload, indent=2, sort_keys=True)
     return (
-        "Aggregate these mini-summaries into sections: Features, Fixes, Performance, Docs, Security, Breaking changes.\n"
-        "- Remove duplicates.\n"
-        "- Drop items marked internal unless they clearly affect users (perf, security).\n"
-        "- Keep bullets concise; prefer user benefit over implementation details.\n"
+        "Aggregate these mini-summaries into sections: Features, Fixes, Improvements.\n"
+        "- Merge related items into a single bullet with combined refs.\n"
+        "- Limit each section to the 5 most important bullets.\n"
+        "- Skip internal-only work.\n"
+        "- Keep bullets short (<=18 words).\n"
         "Return JSON in schema: {\"sections\":[{\"title\":\"Features\",\"items\":[{\"summary\":\"...\",\"refs\":[...]}, ...]}, ...]}.\n"
         "\nmini-summaries:\n"
         f"{data_json}\n"

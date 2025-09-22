@@ -15,6 +15,11 @@
       "title": "Features",
       "items": [
         {
+          "summary": "Docs: update quickstart",
+          "refs": [],
+          "labels": ["Feature"]
+        },
+        {
           "summary": "Feat: add onboarding flow",
           "refs": [],
           "labels": ["Feature"]
@@ -28,16 +33,6 @@
           "summary": "Fix: handle empty input",
           "refs": [],
           "labels": ["Fix"]
-        }
-      ]
-    },
-    {
-      "title": "Docs",
-      "items": [
-        {
-          "summary": "Docs: update quickstart",
-          "refs": [],
-          "labels": ["Docs"]
         }
       ]
     }
