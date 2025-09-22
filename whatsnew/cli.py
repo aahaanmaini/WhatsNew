@@ -89,6 +89,13 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: 
         default=False,
         help="Execute without writing changes.",
     )
+    parser.add_argument(
+        "--private",
+        dest="private",
+        action="store_true",
+        default=False,
+        help="Prefer the Cerebras provider when multiple providers are configured.",
+    )
 
     range_group = parser.add_argument_group("Range selection")
     if include_range_tag:
@@ -128,6 +135,7 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_range_tag: 
         include_code_hunks=None,
         include_internal=None,
         drop_internal=None,
+        private=False,
         tag=None,
         from_sha=None,
         to_sha=None,
@@ -275,6 +283,9 @@ def _collect_cli_overrides(args: argparse.Namespace) -> dict:
         overrides["drop_internal"] = not args.include_internal
     elif getattr(args, "drop_internal", None):
         overrides["drop_internal"] = True
+
+    if getattr(args, "private", False):
+        overrides["provider"] = {"name": "cerebras"}
 
     return overrides
 
